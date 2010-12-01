@@ -6,12 +6,12 @@
         [hiccup.core         :only [h html]]
         [hiccup.page-helpers :only [doctype include-css link-to xhtml-tag]]
         [hiccup.form-helpers :only [form-to text-area text-field submit-button]]
-        redditongae.datastore-util
         )
   (:require [compojure.route          :as route]
             [appengine.datastore :as ds]
             [appengine.datastore.query :as dsq]
-            [appengine.users          :as users])
+            [appengine.users          :as users]
+            [redditongae.datastore-util :as du])
   (:import (java.util Date)
            (org.joda.time DateTime Duration Period)))
 
@@ -49,7 +49,7 @@
 ; lets limit this to 2 results max
 (defn links-by-time []
   (-> (dsq/compile-select "link" order-by (:date :desc) (:points :desc))
-      (execute-limit 2)))
+      (du/execute-limit 10)))
 
 (defn render-links [links]
   (println "LINKS: " links)

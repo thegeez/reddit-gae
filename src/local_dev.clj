@@ -117,6 +117,8 @@
 
 (comment
   (require 'local-dev)
+  
   (require 'redditongae.core)
+  
   (local-dev/start-server #'redditongae.core/reddit)
 )
