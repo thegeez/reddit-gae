@@ -9,7 +9,7 @@
 
 (defn- execute-query-limit [#^Query query limit]
   (-> (prepare-query query)
-        (.asQueryResultIterator (FetchOptions$Builder/withLimit  2))
+        (.asQueryResultIterator (FetchOptions$Builder/withLimit limit))
         (iterator-seq)
         (->>
          (map deserialize))))
