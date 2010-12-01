@@ -42,11 +42,26 @@
 (defn links-by-points []
   (ds/select "link" order-by (:points :desc) (:date :asc)))
 
-;;#(.getMillis (Duration. (:date %) (DateTime.))) >)
+(use '[appengine.datastore.service :only (prepare-query)]
+     '[appengine.datastore.protocols])
+(import '[com.google.appengine.api.datastore FetchOptions$Builder])
+
+; lets limit this to 2 results max
 (defn links-by-time []
-  (ds/select "link" order-by (:date :desc) (:points :desc)))
+;  (ds/select "link" order-by (:date :desc) (:points :desc)))
+  (let [res (appengine.datastore.query/compile-select "link" order-by (:date :desc) (:points :desc))
+        ]
+    (println "Query: " res)
+   
+    (-> (prepare-query res)
+        (.asQueryResultIterator (FetchOptions$Builder/withLimit  2))
+        (iterator-seq)
+        (->>
+         (map deserialize)))))
+;      (appengine.datastore.query/execute-query)))
 
 (defn render-links [links]
+  (println "LINKS: " links)
   (for [link links]
     (let [{:keys [url title points date]} link]
       [:li#linkinfo
@@ -106,11 +121,9 @@
    (cond
     (invalid-url? url) "/new/?msg=Invalid URL"
     (empty? title)     "/new/?msg=Invalid Title"
- ;  (@data url)        "/new/?msg=Link already submitted"
     (ds/find-entity (ds/make-key "link" url))  "/new/?msg=Link already submitted"
     :else
     (do
-      ;(swap! data assoc url {:title title :date (DateTime.) :points 1})
       (ds/save-entity (link {:url url :title title :date (DateTime.) :points 1}))
       "/"))))
 
@@ -120,6 +133,9 @@
     (ds/update-entity link {:points (mfn (:points link))})
     (redirect "/")))
 
+
+;; Routes that map to simple datastore actions
+;; This is to be able to run this actions within the proper setup/thread
 (defroutes ds-test-routes
   (GET "/ds/save" []
        (do (ds/save-entity (link {:title "Test Link" :url "www.test.nl"
