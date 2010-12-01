@@ -7,14 +7,22 @@
         [hiccup.page-helpers :only [doctype include-css link-to xhtml-tag]]
         [hiccup.form-helpers :only [form-to text-area text-field submit-button]])
   (:require [compojure.route          :as route]
-            [appengine.datastore.core :as ds]
+            [appengine.datastore :as ds]
             [appengine.users          :as users])
-  (:import (com.google.appengine.api.datastore Query)
+  (:import (java.util Date)
            (org.joda.time DateTime Duration Period)))
 
-;; TODO replace it with data store use
-(def data  (atom {"http://groups.google.com/group/amsterdam-clojurians"
-                  {:title "Amsterdam Clojurians" :points 1 :date (DateTime.)}}))
+
+; ds/defentity does not allow #() inline
+(defn- joda->javadate [jodadate] (.toDate jodadate))
+(defn- java->jodadate [javadate] (DateTime. javadate))
+
+(ds/defentity Link ()
+  ((url :key identity)
+   (title)
+   (points)
+   (date :serialize joda->javadate
+         :deserialize java->jodadate)))
 
 (def formatter
      (.toPrinter (doto (org.joda.time.format.PeriodFormatterBuilder.)
@@ -25,13 +33,22 @@
 
 (defn pprint [stamp]
   (let [retr   (StringBuffer.)
-	period (Period. (Duration. stamp (DateTime.)))]
+        ; added 1 second offset because new links get empty time
+        period (Period. (Duration. stamp (.plusSeconds (DateTime.) 1)))]
     (.printTo formatter retr period (java.util.Locale. "US"))
     (str retr)))
 
-(defn render-links [keyfn cmp]
-  (for [link (take 10 (sort-by keyfn cmp @data))]
-    (let [[url {:keys [title points date]}] link]
+;; Need to add a limit
+(defn links-by-points []
+  (ds/select "link" order-by (:points :desc) (:date :asc)))
+
+;;#(.getMillis (Duration. (:date %) (DateTime.))) >)
+(defn links-by-time []
+  (ds/select "link" order-by (:date :desc) (:points :desc)))
+
+(defn render-links [links]
+  (for [link links]
+    (let [{:keys [url title points date]} link]
       [:li#linkinfo
        (link-to url title)
        [:span (format " Posted %s ago. %d %s " (pprint date) points "points")
@@ -43,14 +60,13 @@
                  (submit-button "down"))]])))
 
 (defn top-bar []
-  (let [ui (users/user-info)]
-    [:div#topbar
-     [:span#user
-      (if-let [user (:user ui)]
-        [:span "Logged in as " [:b (.getNickname user)] " "
-         (link-to (.createLogoutURL (:user-service ui) "/") "Logout")]
-        (link-to (.createLoginURL (:user-service ui) "/") "Login"))]
-     [:span#nav "Navigation" [:a {:href "/"} "Refresh"] [:a {:href "/new/"} "Add link"]]]))
+  [:div#topbar
+   [:span#user
+    (if-let [user (users/current-user)]
+      [:span "Logged in as " [:b (:nickname user)] " "
+       (link-to (users/logout-url "/") "Logout")]
+      (link-to (users/login-url "/") "Login"))]
+   [:span#nav "Navigation" [:a {:href "/"} "Refresh"] [:a {:href "/new/"} "Add link"]]])
 
 (defn reddit-new-link [msg]
   (html
@@ -77,9 +93,9 @@
     [:h1 "Reddit.Clojure.GAE"]
     (top-bar)
     [:h1 "Highest ranking list"]
-    [:ol (render-links #(:points (val %))  >)]
+    [:ol (render-links (links-by-points))]
     [:h1 "Latest link"]  
-    [:ol (render-links #(.getMillis (Duration. (:date %) (DateTime.))) >)]]))
+    [:ol (render-links (links-by-time))]]))
 
 (defn invalid-url? [url]
   (or (empty? url)
@@ -90,22 +106,39 @@
    (cond
     (invalid-url? url) "/new/?msg=Invalid URL"
     (empty? title)     "/new/?msg=Invalid Title"
-    (@data url)        "/new/?msg=Link already submitted"
+ ;  (@data url)        "/new/?msg=Link already submitted"
+    (ds/find-entity (ds/make-key "link" url))  "/new/?msg=Link already submitted"
     :else
     (do
-      (swap! data assoc url {:title title :date (DateTime.) :points 1})
+      ;(swap! data assoc url {:title title :date (DateTime.) :points 1})
+      (ds/save-entity (link {:url url :title title :date (DateTime.) :points 1}))
       "/"))))
 
 (defn rate [url mfn]
-  (println "Rating " url)
-  (swap! data (fn [old-data]
-                (when (old-data url)
-                  (update-in old-data [url :points] mfn))))
-  (redirect "/"))
+  (let [link (ds/find-entity (ds/make-key "link" url))]
+    (println "Rating is: " url (:points link))
+    (ds/update-entity link {:points (mfn (:points link))})
+    (redirect "/")))
+
+(defroutes ds-test-routes
+  (GET "/ds/save" []
+       (do (ds/save-entity (link {:title "Test Link" :url "www.test.nl"
+                                  :points 1 :date (DateTime.)}))
+           (redirect "/")))
+  (GET "/ds/show" []
+       (do (println (ds/select "link"))
+           (redirect "/")))
+  (GET "/ds/find/*" {{url "*"} :params}
+       (let [e (ds/find-entity (ds/make-key "link" url))]
+         (println "Checked for existing entity w/ url: " url " result: " e)
+         (redirect "/"))))
 
 (defroutes public-routes
+  ds-test-routes
   (GET "/" [] (reddit-home))
-  (GET  "/new/*" {{msg :msg} :params} (reddit-new-link msg)))
+  (GET  "/new/*" {{msg "msg"} :params} (reddit-new-link msg)))
+
+
 
 (defroutes loggedin-routes
   (POST "/new/" [url title] (add-link title url))
@@ -114,10 +147,9 @@
 
 (defn wrap-requiring-loggedin [application]
   (fn [request]
-    (let [{:keys [user-service]} (users/user-info request)]
-      (if (.isUserLoggedIn user-service)
-        (application request)
-        {:status 403 :body "Access denied. You must be logged in user!"}))))
+    (if (users/current-user)
+      (application request)
+      {:status 403 :body "Access denied. You must be logged in user!"})))
 
 (wrap! loggedin-routes
        wrap-requiring-loggedin
