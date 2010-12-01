@@ -5,9 +5,12 @@
         [ring.util.response  :only [redirect]]
         [hiccup.core         :only [h html]]
         [hiccup.page-helpers :only [doctype include-css link-to xhtml-tag]]
-        [hiccup.form-helpers :only [form-to text-area text-field submit-button]])
+        [hiccup.form-helpers :only [form-to text-area text-field submit-button]]
+        redditongae.datastore-util
+        )
   (:require [compojure.route          :as route]
             [appengine.datastore :as ds]
+            [appengine.datastore.query :as dsq]
             [appengine.users          :as users])
   (:import (java.util Date)
            (org.joda.time DateTime Duration Period)))
@@ -42,23 +45,11 @@
 (defn links-by-points []
   (ds/select "link" order-by (:points :desc) (:date :asc)))
 
-(use '[appengine.datastore.service :only (prepare-query)]
-     '[appengine.datastore.protocols])
-(import '[com.google.appengine.api.datastore FetchOptions$Builder])
 
 ; lets limit this to 2 results max
 (defn links-by-time []
-;  (ds/select "link" order-by (:date :desc) (:points :desc)))
-  (let [res (appengine.datastore.query/compile-select "link" order-by (:date :desc) (:points :desc))
-        ]
-    (println "Query: " res)
-   
-    (-> (prepare-query res)
-        (.asQueryResultIterator (FetchOptions$Builder/withLimit  2))
-        (iterator-seq)
-        (->>
-         (map deserialize)))))
-;      (appengine.datastore.query/execute-query)))
+  (-> (dsq/compile-select "link" order-by (:date :desc) (:points :desc))
+      (execute-limit 2)))
 
 (defn render-links [links]
   (println "LINKS: " links)
