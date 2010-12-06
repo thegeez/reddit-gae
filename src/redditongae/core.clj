@@ -13,7 +13,8 @@
             [appengine.datastore :as ds]
             [appengine.datastore.query :as dsq]
             [appengine.users          :as users]
-            [redditongae.datastore-util :as du])
+            [redditongae.datastore-util :as du]
+            [redditongae.datastore-session :as datastore-session])
   (:import (java.util Date)
            (org.joda.time DateTime Duration Period)))
 
@@ -192,6 +193,7 @@
 (wrap! reddit
        wrap-request-logging
        wrap-flash
-       wrap-session)
+      (wrap-session {:store (datastore-session/gae-session-data-store)})
+       )
 
 (defservice reddit)
