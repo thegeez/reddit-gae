@@ -8,7 +8,7 @@
                  [hiccup "0.3.0"]
                  [appengine "0.4.1-SNAPSHOT"]
                  [joda-time "1.6"]]
-  :dev-dependencies [[swank-clojure "1.2.1"]
+  :dev-dependencies [[swank-clojure "1.2.1"] ;; for running the debug thread for ds
                      [com.google.appengine/appengine-api-labs "1.3.8"]
                      [com.google.appengine/appengine-api-stubs "1.3.8"]
                      [com.google.appengine/appengine-testing "1.3.8"]]

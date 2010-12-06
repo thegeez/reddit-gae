@@ -3,6 +3,8 @@
   (:use compojure.core
         [ring.util.servlet   :only [defservice]]
         [ring.util.response  :only [redirect]]
+        [ring.middleware.session :only [wrap-session]]
+        [ring.middleware.flash :only [wrap-flash]]
         [hiccup.core         :only [h html]]
         [hiccup.page-helpers :only [doctype include-css link-to xhtml-tag]]
         [hiccup.form-helpers :only [form-to text-area text-field submit-button]]
@@ -49,7 +51,8 @@
 ; lets limit this to 2 results max
 (defn links-by-time []
   (-> (dsq/compile-select "link" order-by (:date :desc) (:points :desc))
-      (du/execute-limit 10)))
+      (du/execute-query-limit 10)))
+  
 
 (defn render-links [links]
   (println "LINKS: " links)
@@ -107,16 +110,19 @@
   (or (empty? url)
       (not (try (java.net.URL. url) (catch Exception e nil)))))
 
+(defn redirect-flash [location flash-msg]
+  (-> (redirect location)
+      (assoc :flash flash-msg)))
+
 (defn add-link [title url]
-  (redirect
-   (cond
-    (invalid-url? url) "/new/?msg=Invalid URL"
-    (empty? title)     "/new/?msg=Invalid Title"
-    (ds/find-entity (ds/make-key "link" url))  "/new/?msg=Link already submitted"
-    :else
-    (do
-      (ds/save-entity (link {:url url :title title :date (DateTime.) :points 1}))
-      "/"))))
+  (cond
+   (invalid-url? url) (redirect-flash "/new/" "Invalid URL")
+   (empty? title)    (redirect-flash  "/new/" "Invalid Title")
+   (ds/find-entity (ds/make-key "link" url))  (redirect-flash "/new/" "Link already submitted")
+   :else
+   (do
+     (ds/save-entity (link {:url url :title title :date (DateTime.) :points 1}))
+     (redirect "/"))))
 
 (defn rate [url mfn]
   (let [link (ds/find-entity (ds/make-key "link" url))]
@@ -138,12 +144,14 @@
   (GET "/ds/find/*" {{url "*"} :params}
        (let [e (ds/find-entity (ds/make-key "link" url))]
          (println "Checked for existing entity w/ url: " url " result: " e)
-         (redirect "/"))))
+         (redirect "/")))
+  )
+
 
 (defroutes public-routes
   ds-test-routes
   (GET "/" [] (reddit-home))
-  (GET  "/new/*" {{msg "msg"} :params} (reddit-new-link msg)))
+  (GET  "/new/*" {msg :flash} (reddit-new-link msg)))
 
 
 
@@ -151,6 +159,7 @@
   (POST "/new/" [url title] (add-link title url))
   (POST "/up/" [url] (rate url inc))
   (POST "/down/" [url] (rate url dec)))
+
 
 (defn wrap-requiring-loggedin [application]
   (fn [request]
@@ -181,6 +190,8 @@
       resp)))
 
 (wrap! reddit
-       wrap-request-logging)
+       wrap-request-logging
+       wrap-flash
+       wrap-session)
 
 (defservice reddit)
