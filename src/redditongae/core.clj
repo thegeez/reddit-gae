@@ -194,6 +194,8 @@
        wrap-request-logging
        wrap-flash
       (wrap-session {:store (datastore-session/gae-session-data-store)})
+;       (wrap-session {:store (redditongae.datastore-memory/memory-store)})
+;       wrap-session
        )
 
 (defservice reddit)

@@ -25,7 +25,7 @@
 (deftype GAEDataSessionStore []
   SessionStore
   (read-session [_ skey]
-                (:data (ds/find-entity (ds/make-key "session" skey)) {}))
+                (:data (when skey (ds/find-entity (ds/make-key "session" skey))) {}))
   (write-session [_ skey data]
                  (let [skey (or skey (str (UUID/randomUUID)))]
                    ; get existing session for skey or create new
@@ -36,10 +36,9 @@
                        (ds/save-entity))
                    skey))
   (delete-session [_ skey]
-                  ; this should be done using
-                  ; only the skey (perhaps in java)
-                  (ds/delete-entity (ds/make-key "session" skey))
-                  nil))
+                  (when skey
+                    (ds/delete-entity (ds/make-key "session" skey))
+                    nil)))
 
 (defn gae-session-data-store
   "Creates an session storage engine, mapped onto GAE Datastore."
